@@ -9,7 +9,7 @@ usage() {
 	echo "         $MYNAME -r [-n namespaces] [-a] [-v]"
 	echo
 	echo "-h --help         print help"
-	echo "-n --namespaces   operate on comma/space separated namespcaes, otheriwse only configured default namespace"
+	echo "-n --namespaces   operate on comma/space separated namespaces, otherwise only configured default namespace"
 	echo "-v --verbose      debugging output"
 	echo "-a --all          all namespaces, only valid for resume"
 	echo "-r --resume       resume pods with previous scale"
