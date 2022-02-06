@@ -1,0 +1,117 @@
+#!/bin/bash
+
+usage() {
+	MYNAME=$(basename $0)
+	echo "Usage:"
+	echo "         Pause:"
+	echo "         $MYNAME [-n namespaces] [-v]"
+	echo "         Resume:"
+	echo "         $MYNAME -r [-n namespaces] [-a] [-v]"
+	echo
+	echo "-h --help         print help"
+	echo "-n --namespaces   operate on comma/space separated namespcaes, otheriwse only configured default namespace"
+	echo "-v --verbose      debugging output"
+	echo "-a --all          all namespaces, only valid for resume"
+	echo "-r --resume       resume pods with previous scale"
+	exit 1
+}
+
+verbose() {
+	if [ ${VERBOSE} ]; then
+		echo VERBOSE $*
+	fi
+}
+
+pause() {
+  ns=$1
+  unset IFS
+  if [ "$1" != "" ]; then
+	  nsarg="-n $ns"
+	  export nsarg
+  fi
+  verbose pause NS $nsarg
+
+  kubectl $nsarg get deploy,sts -o jsonpath='{range .items[*]}{"kubectl $nsarg annotate "}{@.kind}{" "}{@.metadata.name}{" previous-scale="}{@.spec.replicas}{" \n"}{end}' | sh $SHPARAM
+  kubectl $nsarg scale --replicas=0 $(kubectl $nsarg get deploy,sts -o name)
+}
+
+resume() {
+  ns=$1
+  unset IFS
+
+  if [ "$1" != "" ]; then
+	  nsarg="-n $ns"
+	  export nsarg
+  fi
+  verbose "resume NS $nsarg"
+
+  kubectl $nsarg get deploy,sts -o jsonpath='{range .items[?(@.metadata.annotations.previous-scale)]}{"kubectl $nsarg scale "}{@.kind}{" "}{@.metadata.name}{" --replicas="}{.metadata.annotations.previous-scale}{"\n"}{end}' | sh $SHPARAM 
+  kubectl $nsarg get deploy,sts -o jsonpath='{range .items[?(@.metadata.annotations.previous-scale)]}{"kubectl $nsarg annotate "}{@.kind}{" "}{@.metadata.name} {" previous-scale-"}{" \n"}{end}' | sh $SHPARAM
+}
+
+do_pause() {
+	if [ -z ${NAMESPACES+x} ]; then
+		# no namespace
+		verbose pause default ns
+		pause
+	else
+		verbose "pause NS: $NAMESPACES"
+		IFS=,
+		for ns in $NAMESPACES; do
+			verbose pause $ns
+			pause $ns
+		done
+		unset IFS
+	fi
+}
+
+do_resume() {
+	if [ ${ALL} ]; then
+		verbose "resume ALL"
+		NAMESPACES=$(kubectl get ns -o jsonpath='{.items[*].metadata.name}{.metadata.annotations.nopause}')
+	fi
+	if [ -z ${NAMESPACES+x} ]; then
+		-- default ns
+		verbose resume DEFAULT
+		resume
+	else
+		verbose resume $NAMESPACES
+		IFS=", "
+		for ns in $NAMESPACES; do
+			resume $ns
+		done
+	fi
+	unset IFS
+}
+
+PARSED_ARGUMENTS=$(getopt -a -n kpause -o han:vr --long help,all,namespaces,verbose,resume: -- "$@")
+VALID_ARGUMENTS=$?
+if [ "$VALID_ARGUMENTS" != "0" ]; then
+  usage
+fi
+
+verbose "PARSED_ARGUMENTS is $PARSED_ARGUMENTS"
+eval set -- "$PARSED_ARGUMENTS"
+
+while :
+do
+  case "$1" in
+    -a | --all)   ALL=1      ; shift   ;;
+    -n | --namespaces)    NAMESPACES="$2"       ; shift 2;;
+    -r | --resume) RESUME=1; shift;;
+    -v | --verbose) VERBOSE=1; export SHPARAM="-x"; shift;;
+    -h | --help) usage;;
+    # -- means the end of the arguments; drop this, and break out of the while loop
+    --) shift; break ;;
+    # If invalid options were passed, then getopt should have reported an error,
+    # which we checked as VALID_ARGUMENTS when getopt was called...
+    *) echo "Unexpected option: $1 - this should not happen."
+       usage ;;
+  esac
+done
+
+if [ -z ${RESUME+x} ]; then
+	do_pause
+else
+	do_resume
+fi
