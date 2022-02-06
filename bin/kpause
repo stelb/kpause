@@ -12,7 +12,7 @@ usage() {
 	echo "-n --namespaces   operate on comma/space separated namespaces, otherwise only configured default namespace"
 	echo "-v --verbose      debugging output"
 	echo "-a --all          all namespaces, only valid for resume"
-	echo "-r --resume       resume pods with previous scale"
+	echo "-r --resume       resume deployments/statefulsets with previous scale"
 	exit 1
 }
 
